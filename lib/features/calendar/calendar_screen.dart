@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import '../../services/api_service.dart';
@@ -117,8 +118,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.favorite, color: Color(0xFFE91E8C)),
-            onPressed: () {}, // 기념일 탭
+            icon: const Icon(Icons.settings_outlined, color: Color(0xFFE91E8C)),
+            onPressed: () => context.push('/settings'),
           ),
         ],
       ),
