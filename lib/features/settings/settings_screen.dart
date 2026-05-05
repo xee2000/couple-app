@@ -167,59 +167,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
       backgroundColor: AppColors.background,
       body: CustomScrollView(
         slivers: [
-          // ── SliverAppBar (그라디언트) ──
+          // ── AppBar ──
           SliverAppBar(
             pinned: true,
-            expandedHeight: 140,
             backgroundColor: AppColors.primary,
             leading: IconButton(
               icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
               onPressed: () => context.pop(),
             ),
-            flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                decoration: const BoxDecoration(gradient: AppColors.gradient),
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 44, height: 44,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.25),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Center(child: Text('👤', style: TextStyle(fontSize: 22))),
-                        ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _nickname.isNotEmpty ? _nickname : '내 계정',
-                              style: const TextStyle(
-                                color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            Text(
-                              _isConnected ? '커플 연결됨 💕' : '아직 연결 안 됨',
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.8), fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              title: const Text('설정',
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 17)),
-              titlePadding: const EdgeInsets.only(left: 56, bottom: 16),
+            title: const Text(
+              '설정',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 18),
+            ),
+            centerTitle: true,
+            flexibleSpace: Container(
+              decoration: const BoxDecoration(gradient: AppColors.gradient),
             ),
           ),
 
@@ -233,6 +195,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // 프로필 카드
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    decoration: BoxDecoration(
+                      gradient: AppColors.gradient,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: AppColors.pinkShadow,
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 52, height: 52,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.25),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Center(child: Text('👤', style: TextStyle(fontSize: 26))),
+                        ),
+                        const SizedBox(width: 14),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _nickname.isNotEmpty ? _nickname : '내 계정',
+                              style: const TextStyle(
+                                color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _isConnected ? '커플 연결됨 💕' : '아직 연결 안 됨',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.85), fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
                   // 커플 섹션
                   _SectionLabel(label: '커플 연결'),
                   const SizedBox(height: 10),
