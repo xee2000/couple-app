@@ -19,7 +19,7 @@ class MainActivity : FlutterActivity() {
                 packageName,
                 PackageManager.GET_SIGNATURES
             )
-            for (signature in info.signatures) {
+            for (signature in info.signatures!!) {
                 val md = MessageDigest.getInstance("SHA")
                 md.update(signature.toByteArray())
                 val keyHash = Base64.encodeToString(md.digest(), Base64.DEFAULT)

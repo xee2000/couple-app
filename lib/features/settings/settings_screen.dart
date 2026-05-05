@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/api_service.dart';
+import '../../core/theme/app_theme.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -18,10 +19,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _loadingCouple = true;
   final _codeController = TextEditingController();
   bool _joining = false;
+  String _nickname = '';
 
   @override
   void initState() {
     super.initState();
+    _loadNickname();
     _loadCoupleInfo();
   }
 
@@ -31,24 +34,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.dispose();
   }
 
+  Future<void> _loadNickname() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() => _nickname = prefs.getString('nickname') ?? '');
+  }
+
   Future<void> _loadCoupleInfo() async {
     setState(() => _loadingCouple = true);
     try {
       final res = await ApiService().get('/couples/me');
       final data = res['data'];
       if (data != null && data['user2_id'] != null) {
-        // 연결된 커플
         setState(() {
           _isConnected = true;
           _partnerNickname = data['partner_nickname'] ?? '연인';
           _myCode = data['invite_code'];
         });
       } else {
-        // 연결 안 됨 - 초대코드만 있거나 없음
         if (data != null) {
           setState(() => _myCode = data['invite_code']);
         } else {
-          // 코드 생성
           await _createMyCode();
         }
         setState(() => _isConnected = false);
@@ -77,13 +82,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await _loadCoupleInfo();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('💕 커플 연결 완료!')),
+          SnackBar(
+            content: const Text('💕 커플 연결 완료!'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppColors.primary,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('연결 실패: $e')),
+          SnackBar(
+            content: Text('연결 실패: $e'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
         );
       }
     } finally {
@@ -94,16 +108,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _logout() async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('로그아웃'),
-        content: const Text('로그아웃 하시겠어요?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('로그아웃', style: TextStyle(color: Colors.red)),
+      builder: (_) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('👋', style: TextStyle(fontSize: 40)),
+              const SizedBox(height: 12),
+              const Text('로그아웃',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 8),
+              const Text('로그아웃 하시겠어요?',
+                  style: TextStyle(color: AppColors.textSecondary)),
+              const SizedBox(height: 24),
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: AppColors.divider),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    child: const Text('취소', style: TextStyle(color: AppColors.textSecondary)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red[50],
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    child: const Text('로그아웃', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ]),
+            ],
           ),
-        ],
+        ),
       ),
     );
     if (confirm == true) {
@@ -116,45 +164,110 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFF0F5),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        title: const Text('설정', style: TextStyle(color: Color(0xFFE91E8C), fontWeight: FontWeight.bold)),
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Color(0xFFE91E8C)),
-          onPressed: () => context.pop(),
-        ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          // 커플 연결 섹션
-          _SectionTitle(title: '커플 연결'),
-          const SizedBox(height: 12),
-
-          if (_loadingCouple)
-            const Center(child: CircularProgressIndicator(color: Color(0xFFE91E8C)))
-          else if (_isConnected)
-            _ConnectedCard(partnerNickname: _partnerNickname ?? '연인')
-          else
-            _DisconnectedCard(
-              myCode: _myCode,
-              codeController: _codeController,
-              joining: _joining,
-              onJoin: _joinCouple,
+      backgroundColor: AppColors.background,
+      body: CustomScrollView(
+        slivers: [
+          // ── SliverAppBar (그라디언트) ──
+          SliverAppBar(
+            pinned: true,
+            expandedHeight: 140,
+            backgroundColor: AppColors.primary,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
+              onPressed: () => context.pop(),
             ),
+            flexibleSpace: FlexibleSpaceBar(
+              background: Container(
+                decoration: const BoxDecoration(gradient: AppColors.gradient),
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 44, height: 44,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.25),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Center(child: Text('👤', style: TextStyle(fontSize: 22))),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _nickname.isNotEmpty ? _nickname : '내 계정',
+                              style: const TextStyle(
+                                color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              _isConnected ? '커플 연결됨 💕' : '아직 연결 안 됨',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.8), fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              title: const Text('설정',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 17)),
+              titlePadding: const EdgeInsets.only(left: 56, bottom: 16),
+            ),
+          ),
 
-          const SizedBox(height: 32),
+          // ── 내용 ──
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                20, 20, 20,
+                MediaQuery.of(context).padding.bottom + 20,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 커플 섹션
+                  _SectionLabel(label: '커플 연결'),
+                  const SizedBox(height: 10),
+                  if (_loadingCouple)
+                    const _LoadingCard()
+                  else if (_isConnected)
+                    _ConnectedCard(partnerNickname: _partnerNickname ?? '연인')
+                  else
+                    _DisconnectedCard(
+                      myCode: _myCode,
+                      codeController: _codeController,
+                      joining: _joining,
+                      onJoin: _joinCouple,
+                    ),
 
-          // 계정 섹션
-          _SectionTitle(title: '계정'),
-          const SizedBox(height: 12),
-          _SettingsTile(
-            icon: Icons.logout,
-            iconColor: Colors.red,
-            title: '로그아웃',
-            onTap: _logout,
+                  const SizedBox(height: 28),
+
+                  // 계정 섹션
+                  _SectionLabel(label: '계정'),
+                  const SizedBox(height: 10),
+                  _SettingsCard(
+                    children: [
+                      _SettingsTile(
+                        icon: Icons.logout_rounded,
+                        iconBg: Colors.red[50]!,
+                        iconColor: Colors.red,
+                        title: '로그아웃',
+                        onTap: _logout,
+                        showDivider: false,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -162,15 +275,117 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-class _SectionTitle extends StatelessWidget {
-  final String title;
-  const _SectionTitle({required this.title});
+// ── 공통 위젯들 ────────────────────────────────────────────────────────────────
+
+class _SectionLabel extends StatelessWidget {
+  final String label;
+  const _SectionLabel({required this.label});
 
   @override
   Widget build(BuildContext context) {
     return Text(
-      title,
-      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.grey),
+      label,
+      style: const TextStyle(
+        fontSize: 12, fontWeight: FontWeight.w700,
+        color: AppColors.textSecondary, letterSpacing: 0.5,
+      ),
+    );
+  }
+}
+
+class _SettingsCard extends StatelessWidget {
+  final List<Widget> children;
+  const _SettingsCard({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppColors.cardShadow,
+      ),
+      child: Column(children: children),
+    );
+  }
+}
+
+class _SettingsTile extends StatelessWidget {
+  final IconData icon;
+  final Color iconBg;
+  final Color iconColor;
+  final String title;
+  final String? subtitle;
+  final VoidCallback onTap;
+  final bool showDivider;
+
+  const _SettingsTile({
+    required this.icon,
+    required this.iconBg,
+    required this.iconColor,
+    required this.title,
+    this.subtitle,
+    required this.onTap,
+    this.showDivider = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 36, height: 36,
+                    decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(10)),
+                    child: Icon(icon, color: iconColor, size: 18),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
+                        if (subtitle != null)
+                          Text(subtitle!, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, size: 18, color: AppColors.textSecondary),
+                ],
+              ),
+            ),
+          ),
+        ),
+        if (showDivider)
+          const Divider(height: 1, indent: 66, color: AppColors.divider),
+      ],
+    );
+  }
+}
+
+class _LoadingCard extends StatelessWidget {
+  const _LoadingCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 80,
+      decoration: BoxDecoration(
+        color: Colors.white, borderRadius: BorderRadius.circular(16),
+        boxShadow: AppColors.cardShadow,
+      ),
+      child: const Center(
+        child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2),
+      ),
     );
   }
 }
@@ -186,29 +401,49 @@ class _ConnectedCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.pink.withOpacity(0.08), blurRadius: 10)],
+        boxShadow: AppColors.cardShadow,
       ),
       child: Row(
         children: [
           Container(
-            width: 48, height: 48,
+            width: 52, height: 52,
             decoration: BoxDecoration(
-              color: const Color(0xFFE91E8C).withOpacity(0.1),
+              gradient: AppColors.gradient,
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.favorite, color: Color(0xFFE91E8C)),
+            child: const Center(child: Text('💑', style: TextStyle(fontSize: 24))),
           ),
           const SizedBox(width: 16),
           Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('연결됨', style: TextStyle(color: Colors.grey, fontSize: 12)),
-              Text(
-                partnerNickname,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFFE91E8C)),
-              ),
-            ]),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('연결된 커플',
+                    style: TextStyle(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.w500)),
+                const SizedBox(height: 2),
+                Text(
+                  partnerNickname,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.primary,
+                  ),
+                ),
+              ],
+            ),
           ),
-          const Icon(Icons.check_circle, color: Color(0xFFE91E8C)),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.check_circle, color: AppColors.primary, size: 14),
+                SizedBox(width: 4),
+                Text('연결됨', style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -235,120 +470,164 @@ class _DisconnectedCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.pink.withOpacity(0.08), blurRadius: 10)],
+        boxShadow: AppColors.cardShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 내 초대코드
-          const Text('내 초대코드', style: TextStyle(fontSize: 13, color: Colors.grey)),
-          const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(
-                child: Text(
-                  myCode ?? '불러오는 중...',
-                  style: const TextStyle(
-                    fontSize: 26, fontWeight: FontWeight.w900,
-                    color: Color(0xFFE91E8C), letterSpacing: 4,
-                  ),
+              Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryLight.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(10),
                 ),
+                child: const Icon(Icons.share, color: AppColors.primary, size: 18),
               ),
-              if (myCode != null)
-                IconButton(
-                  icon: const Icon(Icons.copy, color: Color(0xFFE91E8C)),
-                  onPressed: () {
-                    Clipboard.setData(ClipboardData(text: myCode!));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('코드가 복사됐어요!')),
-                    );
-                  },
-                ),
+              const SizedBox(width: 12),
+              const Text('내 초대코드',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
             ],
           ),
-          const Text('이 코드를 연인에게 공유하세요', style: TextStyle(color: Colors.grey, fontSize: 12)),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    myCode ?? '불러오는 중...',
+                    style: const TextStyle(
+                      fontSize: 24, fontWeight: FontWeight.w900,
+                      color: AppColors.primary, letterSpacing: 5,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                if (myCode != null)
+                  GestureDetector(
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: myCode!));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: const Text('코드가 복사됐어요!'),
+                          behavior: SnackBarBehavior.floating,
+                          backgroundColor: AppColors.primary,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.copy_rounded, color: AppColors.primary, size: 18),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            '이 코드를 연인에게 공유하세요',
+            style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+          ),
 
           const SizedBox(height: 20),
-          const Divider(),
-          const SizedBox(height: 16),
+          const Row(children: [
+            Expanded(child: Divider(color: AppColors.divider)),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: Text('또는', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+            ),
+            Expanded(child: Divider(color: AppColors.divider)),
+          ]),
+          const SizedBox(height: 20),
 
           // 연인 코드 입력
-          const Text('연인 코드 입력', style: TextStyle(fontSize: 13, color: Colors.grey)),
-          const SizedBox(height: 8),
+          Row(
+            children: [
+              Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.purple[50]!,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.favorite_border, color: Colors.purple[300], size: 18),
+              ),
+              const SizedBox(width: 12),
+              const Text('연인 코드 입력',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+            ],
+          ),
+          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
                 child: TextField(
                   controller: codeController,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 3),
+                  textCapitalization: TextCapitalization.characters,
+                  style: const TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.w700,
+                    letterSpacing: 4, color: AppColors.textPrimary,
+                  ),
                   decoration: InputDecoration(
-                    hintText: '코드 8자리',
-                    hintStyle: const TextStyle(fontSize: 14, letterSpacing: 1, color: Colors.grey),
+                    hintText: '코드 입력',
+                    hintStyle: const TextStyle(fontSize: 13, letterSpacing: 1, color: AppColors.textSecondary),
                     filled: true,
-                    fillColor: const Color(0xFFFFF0F5),
+                    fillColor: AppColors.background,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide.none,
                     ),
-                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                    ),
                   ),
                 ),
               ),
               const SizedBox(width: 10),
               SizedBox(
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: joining ? null : onJoin,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFE91E8C),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                height: 50,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: AppColors.gradient,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: AppColors.pinkShadow,
                   ),
-                  child: joining
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Text('연결', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  child: ElevatedButton(
+                    onPressed: joining ? null : onJoin,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                    ),
+                    child: joining
+                        ? const SizedBox(
+                            width: 18, height: 18,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                          )
+                        : const Text('연결',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),
+                  ),
                 ),
               ),
             ],
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _SettingsTile extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
-  final String title;
-  final VoidCallback onTap;
-
-  const _SettingsTile({
-    required this.icon,
-    required this.iconColor,
-    required this.title,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [BoxShadow(color: Colors.pink.withOpacity(0.05), blurRadius: 6)],
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: iconColor, size: 22),
-            const SizedBox(width: 14),
-            Expanded(child: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500))),
-            const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
-          ],
-        ),
       ),
     );
   }
