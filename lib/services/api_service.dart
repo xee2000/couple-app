@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants/app_constants.dart';
@@ -48,6 +49,25 @@ class ApiService {
 
   Future<dynamic> delete(String path) async {
     final res = await http.delete(Uri.parse('$_base$path'), headers: await _headers);
+    return _parse(res);
+  }
+
+  /// 멀티파트 파일 업로드 (사진첩용)
+  Future<dynamic> uploadFiles(
+    String path,
+    Map<String, String> fields,
+    List<File> files, {
+    String fileField = 'photos',
+  }) async {
+    final token = await _token;
+    final request = http.MultipartRequest('POST', Uri.parse('$_base$path'));
+    if (token != null) request.headers['Authorization'] = 'Bearer $token';
+    fields.forEach((k, v) => request.fields[k] = v);
+    for (final file in files) {
+      request.files.add(await http.MultipartFile.fromPath(fileField, file.path));
+    }
+    final streamed = await request.send();
+    final res = await http.Response.fromStream(streamed);
     return _parse(res);
   }
 

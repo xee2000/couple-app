@@ -90,6 +90,51 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return false;
   }
 
+  bool _isPeriodStart(DateTime day) {
+    for (final cycle in _cycles) {
+      final start = DateTime.tryParse(cycle['start_date'] ?? '');
+      if (start == null) continue;
+      if (isSameDay(start, day)) return true;
+    }
+    return false;
+  }
+
+  /// 다음 생리 예정일 예측
+  /// - 최근 사이클들의 평균 주기로 계산
+  /// - 이미 지난 예정일이면 null 반환
+  DateTime? _getNextPeriodPrediction() {
+    if (_cycles.isEmpty) return null;
+    final sorted = [..._cycles]
+      ..sort((a, b) =>
+          (b['start_date'] as String).compareTo(a['start_date'] as String));
+
+    final latestStart = DateTime.tryParse(sorted.first['start_date'] ?? '');
+    if (latestStart == null) return null;
+
+    // 평균 주기 계산 (최대 3개)
+    int cycleLength = sorted.first['cycle_length'] as int? ?? 28;
+    if (sorted.length >= 2) {
+      int total = 0, count = 0;
+      for (int i = 0; i < sorted.length - 1 && i < 3; i++) {
+        final s1 = DateTime.tryParse(sorted[i]['start_date'] ?? '');
+        final s2 = DateTime.tryParse(sorted[i + 1]['start_date'] ?? '');
+        if (s1 != null && s2 != null) {
+          total += s1.difference(s2).inDays.abs();
+          count++;
+        }
+      }
+      if (count > 0) cycleLength = total ~/ count;
+    }
+
+    final predicted = latestStart.add(Duration(days: cycleLength));
+    final today = DateTime.now();
+    // 이미 지난 예정일이면 다음 주기로
+    if (predicted.isBefore(DateTime(today.year, today.month, today.day))) {
+      return null;
+    }
+    return predicted;
+  }
+
   String? _getAnniversaryForDay(DateTime day) {
     for (final a in _anniversaries) {
       final aDate = DateTime.tryParse(a['date'] ?? '');
@@ -125,6 +170,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final anniversary =
         _selectedDay != null ? _getAnniversaryForDay(_selectedDay!) : null;
     final inPeriod = _selectedDay != null && _isInPeriod(_selectedDay!);
+    final nextPeriod = _getNextPeriodPrediction();
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -160,18 +206,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 defaultBuilder: (ctx, day, _) => _DayCell(
                   day: day, selected: false,
                   inPeriod: _isInPeriod(day),
+                  isPeriodStart: _isPeriodStart(day),
                   hasAnniversary: _getAnniversaryForDay(day) != null,
                   events: _getEventsForDay(day),
                 ),
                 selectedBuilder: (ctx, day, _) => _DayCell(
                   day: day, selected: true,
                   inPeriod: _isInPeriod(day),
+                  isPeriodStart: _isPeriodStart(day),
                   hasAnniversary: _getAnniversaryForDay(day) != null,
                   events: _getEventsForDay(day),
                 ),
                 todayBuilder: (ctx, day, _) => _DayCell(
                   day: day, selected: false, isToday: true,
                   inPeriod: _isInPeriod(day),
+                  isPeriodStart: _isPeriodStart(day),
                   hasAnniversary: _getAnniversaryForDay(day) != null,
                   events: _getEventsForDay(day),
                 ),
@@ -193,7 +242,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ),
               calendarStyle: const CalendarStyle(
                 outsideDaysVisible: false,
-                cellMargin: EdgeInsets.all(2),
+                cellMargin: EdgeInsets.zero,
+                // 기본 decoration을 모두 비워서 커스텀 빌더와 겹치지 않도록
+                defaultDecoration: BoxDecoration(),
+                selectedDecoration: BoxDecoration(),
+                todayDecoration: BoxDecoration(),
+                weekendDecoration: BoxDecoration(),
+                outsideDecoration: BoxDecoration(),
+                defaultTextStyle: TextStyle(color: Colors.transparent),
+                selectedTextStyle: TextStyle(color: Colors.transparent),
+                todayTextStyle: TextStyle(color: Colors.transparent),
+                weekendTextStyle: TextStyle(color: Colors.transparent),
+                outsideTextStyle: TextStyle(color: Colors.transparent),
               ),
               rowHeight: 52,
             ),
@@ -208,6 +268,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     events: selectedEvents,
                     anniversary: anniversary,
                     inPeriod: inPeriod,
+                    nextPeriod: nextPeriod,
                     onDeleteEvent: (id) async {
                       await ApiService().delete('/events/$id');
                       _loadData();
@@ -298,6 +359,7 @@ class _DayCell extends StatelessWidget {
   final bool selected;
   final bool isToday;
   final bool inPeriod;
+  final bool isPeriodStart;
   final bool hasAnniversary;
   final List events;
 
@@ -306,6 +368,7 @@ class _DayCell extends StatelessWidget {
     required this.selected,
     this.isToday = false,
     required this.inPeriod,
+    this.isPeriodStart = false,
     required this.hasAnniversary,
     required this.events,
   });
@@ -322,44 +385,75 @@ class _DayCell extends StatelessWidget {
       bgColor = AppColors.primaryLight.withOpacity(0.3);
       textColor = AppColors.primary;
     } else if (inPeriod) {
-      bgColor = AppColors.periodRed.withOpacity(0.12);
+      bgColor = AppColors.periodRed.withValues(alpha: 0.28);
       textColor = AppColors.periodRed;
     }
 
     // 주말 색상
-    if (!selected && !isToday && (day.weekday == DateTime.saturday)) {
+    if (!selected && !isToday && day.weekday == DateTime.saturday) {
       textColor = const Color(0xFF6B9FE8);
     } else if (!selected && !isToday && !inPeriod && day.weekday == DateTime.sunday) {
       textColor = AppColors.primary.withOpacity(0.8);
     }
 
     return Container(
-      margin: const EdgeInsets.all(3),
+      margin: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: bgColor,
         shape: BoxShape.circle,
         border: hasAnniversary && !selected
             ? Border.all(color: AppColors.primary, width: 1.5)
-            : null,
+            : (inPeriod && !selected)
+                ? Border.all(color: AppColors.periodRed.withValues(alpha: 0.55), width: 1.5)
+                : null,
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Stack(
+        alignment: Alignment.center,
         children: [
-          Text(
-            '${day.day}',
-            style: TextStyle(
-              fontSize: 13,
-              color: textColor,
-              fontWeight: selected || isToday ? FontWeight.w700 : FontWeight.w400,
-            ),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                '${day.day}',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: textColor,
+                  fontWeight: selected || isToday ? FontWeight.w700 : FontWeight.w400,
+                ),
+              ),
+              // 이벤트 점 or 생리 기간 점
+              if (events.isNotEmpty && !selected)
+                Container(
+                  width: 4, height: 4,
+                  margin: const EdgeInsets.only(top: 1),
+                  decoration: BoxDecoration(
+                    color: inPeriod ? AppColors.periodRed : AppColors.primary,
+                    shape: BoxShape.circle,
+                  ),
+                )
+              else if (inPeriod && !selected)
+                Container(
+                  width: 4, height: 4,
+                  margin: const EdgeInsets.only(top: 1),
+                  decoration: BoxDecoration(
+                    color: AppColors.periodRed.withOpacity(0.6),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+            ],
           ),
-          if (events.isNotEmpty && !selected)
-            Container(
-              width: 4, height: 4,
-              margin: const EdgeInsets.only(top: 1),
-              decoration: const BoxDecoration(
-                color: AppColors.primary,
-                shape: BoxShape.circle,
+          // 생리 시작일 — 우상단 작은 🩸 뱃지
+          if (isPeriodStart && !selected)
+            Positioned(
+              top: 2,
+              right: 2,
+              child: Container(
+                width: 8, height: 8,
+                decoration: BoxDecoration(
+                  color: AppColors.periodRed,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 1),
+                ),
               ),
             ),
         ],
@@ -375,6 +469,7 @@ class _DayDetailPanel extends StatelessWidget {
   final List<Map<String, dynamic>> events;
   final String? anniversary;
   final bool inPeriod;
+  final DateTime? nextPeriod;
   final Function(String id) onDeleteEvent;
   final Function(Map<String, dynamic> event) onEditEvent;
 
@@ -383,6 +478,7 @@ class _DayDetailPanel extends StatelessWidget {
     required this.events,
     required this.anniversary,
     required this.inPeriod,
+    this.nextPeriod,
     required this.onDeleteEvent,
     required this.onEditEvent,
   });
@@ -419,13 +515,17 @@ class _DayDetailPanel extends StatelessWidget {
               color: AppColors.primary,
             ),
 
-          // 생리 배너
+          // 생리 기간 배너
           if (inPeriod)
             _InfoBanner(
               icon: '🌸',
               label: '생리 기간',
               color: AppColors.periodRed,
             ),
+
+          // 다음 생리 예정일 (생리 기간이 아닐 때만 표시)
+          if (!inPeriod && nextPeriod != null)
+            _NextPeriodChip(date: nextPeriod!),
 
           // 이벤트 목록
           ...events.map((e) => _EventCard(
@@ -454,6 +554,64 @@ class _DayDetailPanel extends StatelessWidget {
                 ],
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NextPeriodChip extends StatelessWidget {
+  final DateTime date;
+  const _NextPeriodChip({required this.date});
+
+  @override
+  Widget build(BuildContext context) {
+    final today = DateTime.now();
+    final dDay = date.difference(DateTime(today.year, today.month, today.day)).inDays;
+    final label = dDay == 0
+        ? '오늘 예정'
+        : dDay > 0
+            ? 'D-$dDay'
+            : 'D+${dDay.abs()}';
+    final formatted = DateFormat('M월 d일', 'ko').format(date);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.periodRed.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.periodRed.withOpacity(0.18), width: 1),
+      ),
+      child: Row(
+        children: [
+          const Text('🩸', style: TextStyle(fontSize: 16)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '다음 생리 예정  $formatted',
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                color: AppColors.periodRed.withOpacity(0.85),
+                fontSize: 13,
+              ),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: AppColors.periodRed.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppColors.periodRed,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -513,18 +671,6 @@ class _EventCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Row(
               children: [
-                Container(
-                  width: 44, height: 44,
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryLight.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: Text(event['emoji'] ?? '💑',
-                        style: const TextStyle(fontSize: 22)),
-                  ),
-                ),
-                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -547,6 +693,32 @@ class _EventCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
+                      Builder(builder: (_) {
+                        final tags = (event['tags'] as List?)?.cast<String>() ?? [];
+                        if (tags.isEmpty) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Wrap(
+                            spacing: 4,
+                            runSpacing: 4,
+                            children: tags.map((t) => Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                t,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            )).toList(),
+                          ),
+                        );
+                      }),
                     ],
                   ),
                 ),

@@ -3,12 +3,23 @@ import 'package:intl/intl.dart';
 import '../../services/api_service.dart';
 import '../../core/theme/app_theme.dart';
 
+/// 이벤트에 붙일 수 있는 태그 목록
+const _kAllTags = [
+  '기념일', '데이트', '놀이동산', '영화', '피시방', '노래방',
+  '카페', '여행', '맛집', '드라이브', '쇼핑', '운동', '기타',
+];
+
 class EventFormSheet extends StatefulWidget {
   final DateTime date;
   final Map<String, dynamic>? existing;
   final VoidCallback onSaved;
 
-  const EventFormSheet({super.key, required this.date, this.existing, required this.onSaved});
+  const EventFormSheet({
+    super.key,
+    required this.date,
+    this.existing,
+    required this.onSaved,
+  });
 
   @override
   State<EventFormSheet> createState() => _EventFormSheetState();
@@ -17,10 +28,8 @@ class EventFormSheet extends StatefulWidget {
 class _EventFormSheetState extends State<EventFormSheet> {
   final _titleCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
-  String _emoji = '💑';
+  final Set<String> _selectedTags = {};
   bool _saving = false;
-
-  final _emojis = ['💑', '🍽️', '🎬', '🏖️', '🎡', '☕', '🎂', '🎁', '💐', '✈️', '🎠', '🍰'];
 
   @override
   void initState() {
@@ -28,7 +37,12 @@ class _EventFormSheetState extends State<EventFormSheet> {
     if (widget.existing != null) {
       _titleCtrl.text = widget.existing!['title'] ?? '';
       _descCtrl.text = widget.existing!['description'] ?? '';
-      _emoji = widget.existing!['emoji'] ?? '💑';
+
+      // 기존 태그 복원
+      final tags = widget.existing!['tags'];
+      if (tags is List) {
+        _selectedTags.addAll(tags.cast<String>());
+      }
     }
   }
 
@@ -47,7 +61,7 @@ class _EventFormSheetState extends State<EventFormSheet> {
         'title': _titleCtrl.text.trim(),
         'description': _descCtrl.text.trim(),
         'date': DateFormat('yyyy-MM-dd').format(widget.date),
-        'emoji': _emoji,
+        'tags': _selectedTags.toList(),
       };
       if (widget.existing != null) {
         await ApiService().put('/events/${widget.existing!['id']}', body);
@@ -62,7 +76,8 @@ class _EventFormSheetState extends State<EventFormSheet> {
           SnackBar(
             content: Text('$e'),
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
       }
@@ -73,7 +88,6 @@ class _EventFormSheetState extends State<EventFormSheet> {
 
   @override
   Widget build(BuildContext context) {
-    // 키보드 높이 + 하단 안전 영역 모두 반영
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
 
@@ -91,7 +105,8 @@ class _EventFormSheetState extends State<EventFormSheet> {
           Center(
             child: Container(
               margin: const EdgeInsets.only(top: 12, bottom: 20),
-              width: 40, height: 4,
+              width: 40,
+              height: 4,
               decoration: BoxDecoration(
                 color: Colors.grey[300],
                 borderRadius: BorderRadius.circular(2),
@@ -103,7 +118,8 @@ class _EventFormSheetState extends State<EventFormSheet> {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   gradient: AppColors.gradient,
                   borderRadius: BorderRadius.circular(20),
@@ -111,13 +127,16 @@ class _EventFormSheetState extends State<EventFormSheet> {
                 child: Text(
                   DateFormat('M월 d일 (E)', 'ko').format(widget.date),
                   style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
                   ),
                 ),
               ),
               const Spacer(),
               IconButton(
-                icon: const Icon(Icons.close, color: AppColors.textSecondary, size: 22),
+                icon: const Icon(Icons.close,
+                    color: AppColors.textSecondary, size: 22),
                 onPressed: () => Navigator.pop(context),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
@@ -126,43 +145,70 @@ class _EventFormSheetState extends State<EventFormSheet> {
           ),
           const SizedBox(height: 20),
 
-          // 이모지 선택
-          const Text('이모지', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 50,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: _emojis.length,
-              itemBuilder: (_, i) {
-                final selected = _emoji == _emojis[i];
-                return GestureDetector(
-                  onTap: () => setState(() => _emoji = _emojis[i]),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    margin: const EdgeInsets.only(right: 8),
-                    width: 46, height: 46,
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? AppColors.primary.withOpacity(0.12)
-                          : Colors.grey[100],
-                      borderRadius: BorderRadius.circular(12),
-                      border: selected
-                          ? Border.all(color: AppColors.primary, width: 1.5)
-                          : null,
-                    ),
-                    child: Center(
-                      child: Text(_emojis[i], style: const TextStyle(fontSize: 22)),
-                    ),
-                  ),
-                );
-              },
+          // 태그 선택
+          const Text(
+            '태그',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _kAllTags.map((tag) {
+              final selected = _selectedTags.contains(tag);
+              return GestureDetector(
+                onTap: () => setState(() {
+                  if (selected) {
+                    _selectedTags.remove(tag);
+                  } else {
+                    _selectedTags.add(tag);
+                  }
+                }),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? AppColors.primary.withValues(alpha: 0.1)
+                        : Colors.grey[100],
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: selected
+                          ? AppColors.primary
+                          : Colors.transparent,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Text(
+                    tag,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: selected
+                          ? AppColors.primary
+                          : AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 20),
 
           // 제목
-          const Text('제목', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+          const Text(
+            '제목',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
+          ),
           const SizedBox(height: 6),
           TextField(
             controller: _titleCtrl,
@@ -170,24 +216,34 @@ class _EventFormSheetState extends State<EventFormSheet> {
             style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
             decoration: InputDecoration(
               hintText: '어떤 날이었나요?',
-              hintStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+              hintStyle: const TextStyle(
+                  color: AppColors.textSecondary, fontSize: 14),
               filled: true,
               fillColor: AppColors.background,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16, vertical: 14),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide.none,
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                borderSide:
+                    const BorderSide(color: AppColors.primary, width: 1.5),
               ),
             ),
           ),
           const SizedBox(height: 12),
 
           // 메모
-          const Text('메모', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+          const Text(
+            '메모',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
+          ),
           const SizedBox(height: 6),
           TextField(
             controller: _descCtrl,
@@ -195,17 +251,20 @@ class _EventFormSheetState extends State<EventFormSheet> {
             style: const TextStyle(fontSize: 14),
             decoration: InputDecoration(
               hintText: '간단한 메모를 남겨보세요 (선택)',
-              hintStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              hintStyle: const TextStyle(
+                  color: AppColors.textSecondary, fontSize: 13),
               filled: true,
               fillColor: AppColors.background,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16, vertical: 14),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide.none,
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                borderSide:
+                    const BorderSide(color: AppColors.primary, width: 1.5),
               ),
             ),
           ),
@@ -226,17 +285,22 @@ class _EventFormSheetState extends State<EventFormSheet> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.transparent,
                   shadowColor: Colors.transparent,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
                 ),
                 child: _saving
                     ? const SizedBox(
-                        width: 22, height: 22,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2),
                       )
                     : Text(
                         widget.existing != null ? '수정하기' : '저장하기',
                         style: const TextStyle(
-                          color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
               ),

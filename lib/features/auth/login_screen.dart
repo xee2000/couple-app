@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:go_router/go_router.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../services/api_service.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -23,17 +24,51 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   @override
   void initState() {
     super.initState();
-    _animCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
-    _fadeAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut);
-    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.12), end: Offset.zero)
-        .animate(CurvedAnimation(parent: _animCtrl, curve: Curves.easeOutCubic));
+    _animCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 900));
+    _fadeAnim =
+        CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut);
+    _slideAnim =
+        Tween<Offset>(begin: const Offset(0, 0.12), end: Offset.zero)
+            .animate(CurvedAnimation(parent: _animCtrl, curve: Curves.easeOutCubic));
     _animCtrl.forward();
+
+    // 애니메이션 완료 후 알림 권한 다이얼로그 표시
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowNotificationDialog());
   }
 
   @override
   void dispose() {
     _animCtrl.dispose();
     super.dispose();
+  }
+
+  /// 최초 1회만 알림 권한 안내 다이얼로그 표시
+  Future<void> _maybeShowNotificationDialog() async {
+    final prefs = await SharedPreferences.getInstance();
+    final asked = prefs.getBool('notification_permission_asked') ?? false;
+    if (asked || !mounted) return;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _NotificationPermissionDialog(
+        onConfirm: () async {
+          await prefs.setBool('notification_permission_asked', true);
+          if (!mounted) return;
+          Navigator.pop(context);
+          // 시스템 권한 다이얼로그 표시
+          await FirebaseMessaging.instance.requestPermission(
+            alert: true, badge: true, sound: true,
+          );
+        },
+        onLater: () async {
+          await prefs.setBool('notification_permission_asked', true);
+          if (!mounted) return;
+          Navigator.pop(context);
+        },
+      ),
+    );
   }
 
   Future<void> _kakaoLogin() async {
@@ -55,7 +90,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       await prefs.setString('user_id', res['user']['id']);
       await prefs.setString('nickname', res['user']['nickname'] ?? '');
 
-      if (mounted) context.go('/calendar');
+      // FCM 토큰 서버 저장 (백그라운드)
+      _saveFcmToken();
+
+      if (!mounted) return;
+
+      // 성별 미설정이면 성별 선택 화면으로, 아니면 캘린더로
+      final gender = res['user']['gender'] as String?;
+      if (gender == null || gender.isEmpty) {
+        context.go('/gender-setup');
+      } else {
+        await prefs.setString('gender', gender);
+        context.go('/home');
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -69,6 +116,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _saveFcmToken() async {
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token == null) return;
+      await ApiService().post('/users/fcm-token', {'token': token});
+    } catch (_) {}
   }
 
   @override
@@ -103,11 +158,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                   children: [
                     SizedBox(height: size.height * 0.07),
 
-                    // 앱 아이콘 영역
                     Container(
                       width: 100, height: 100,
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.25),
+                        color: Colors.white.withValues(alpha: 0.25),
                         shape: BoxShape.circle,
                       ),
                       child: const Center(
@@ -127,14 +181,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                     Text(
                       '우리 둘만의 소중한 기록',
                       style: TextStyle(
-                        fontSize: 15, color: Colors.white.withOpacity(0.85),
+                        fontSize: 15,
+                        color: Colors.white.withValues(alpha: 0.85),
                         fontWeight: FontWeight.w400,
                       ),
                     ),
 
                     SizedBox(height: size.height * 0.07),
 
-                    // 카드
                     Expanded(
                       child: Container(
                         margin: const EdgeInsets.symmetric(horizontal: 28),
@@ -194,6 +248,139 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   }
 }
 
+// ── 알림 권한 설명 다이얼로그 ─────────────────────────────────────────────────
+
+class _NotificationPermissionDialog extends StatelessWidget {
+  final VoidCallback onConfirm;
+  final VoidCallback onLater;
+
+  const _NotificationPermissionDialog({
+    required this.onConfirm,
+    required this.onLater,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 36),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(28, 32, 28, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 아이콘
+            Container(
+              width: 72, height: 72,
+              decoration: BoxDecoration(
+                gradient: AppColors.gradient,
+                shape: BoxShape.circle,
+                boxShadow: AppColors.pinkShadow,
+              ),
+              child: const Center(
+                child: Text('🔔', style: TextStyle(fontSize: 34)),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            const Text(
+              '알림을 허용해주세요',
+              style: TextStyle(
+                fontSize: 18, fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            const Text(
+              '아래와 같은 알림을 받을 수 있어요',
+              style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 16),
+
+            // 알림 항목들
+            ...[
+              ('💕', '파트너와 커플 연결이 됐을 때'),
+            ].map((item) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  Container(
+                    width: 36, height: 36,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Center(child: Text(item.$1, style: const TextStyle(fontSize: 18))),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      item.$2,
+                      style: const TextStyle(
+                        fontSize: 13, color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )),
+
+            const SizedBox(height: 24),
+
+            // 확인했어요 버튼
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: AppColors.gradient,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: AppColors.pinkShadow,
+                ),
+                child: ElevatedButton(
+                  onPressed: onConfirm,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    shadowColor: Colors.transparent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: const Text(
+                    '확인했어요',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            // 나중에 버튼
+            TextButton(
+              onPressed: onLater,
+              child: const Text(
+                '나중에',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── 카카오 버튼 ───────────────────────────────────────────────────────────────
+
 class _KakaoButton extends StatefulWidget {
   final VoidCallback onTap;
   const _KakaoButton({required this.onTap});
@@ -209,7 +396,10 @@ class _KakaoButtonState extends State<_KakaoButton> {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTapDown: (_) => setState(() => _pressed = true),
-      onTapUp: (_) { setState(() => _pressed = false); widget.onTap(); },
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        widget.onTap();
+      },
       onTapCancel: () => setState(() => _pressed = false),
       child: AnimatedScale(
         scale: _pressed ? 0.96 : 1.0,
@@ -222,7 +412,7 @@ class _KakaoButtonState extends State<_KakaoButton> {
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: AppColors.kakao.withOpacity(0.4),
+                color: AppColors.kakao.withValues(alpha: 0.4),
                 blurRadius: 12, offset: const Offset(0, 4),
               ),
             ],

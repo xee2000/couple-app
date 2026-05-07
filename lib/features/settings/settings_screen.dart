@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:intl/intl.dart';
 import '../../services/api_service.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -20,6 +21,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _codeController = TextEditingController();
   bool _joining = false;
   String _nickname = '';
+  String _gender = '';
 
   @override
   void initState() {
@@ -36,7 +38,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadNickname() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() => _nickname = prefs.getString('nickname') ?? '');
+    setState(() {
+      _nickname = prefs.getString('nickname') ?? '';
+      _gender = prefs.getString('gender') ?? '';
+    });
   }
 
   Future<void> _loadCoupleInfo() async {
@@ -102,6 +107,92 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     } finally {
       if (mounted) setState(() => _joining = false);
+    }
+  }
+
+  Future<void> _disconnectCouple() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('💔', style: TextStyle(fontSize: 40)),
+              const SizedBox(height: 12),
+              const Text(
+                '공유 끊기',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '공유를 끊으면 함께 작성한\n캘린더와 기념일이 모두 삭제됩니다.\n\n계정은 그대로 유지되며\n새로운 연결을 시작할 수 있어요.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textSecondary, height: 1.5),
+              ),
+              const SizedBox(height: 24),
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: AppColors.divider),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    child: const Text('취소', style: TextStyle(color: AppColors.textSecondary)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red[50],
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    child: const Text(
+                      '끊기',
+                      style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ]),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await ApiService().delete('/couples/disconnect');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('공유가 해제됐어요.'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+        // 커플 연결 화면으로 이동
+        context.go('/couple-setup');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('오류가 발생했어요: $e'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
     }
   }
 
@@ -199,16 +290,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                     decoration: BoxDecoration(
-                      gradient: AppColors.gradient,
+                      color: Colors.white,
                       borderRadius: BorderRadius.circular(20),
-                      boxShadow: AppColors.pinkShadow,
+                      boxShadow: AppColors.cardShadow,
                     ),
                     child: Row(
                       children: [
                         Container(
                           width: 52, height: 52,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.25),
+                          decoration: const BoxDecoration(
+                            gradient: AppColors.gradient,
                             shape: BoxShape.circle,
                           ),
                           child: const Center(child: Text('👤', style: TextStyle(fontSize: 26))),
@@ -220,14 +311,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             Text(
                               _nickname.isNotEmpty ? _nickname : '내 계정',
                               style: const TextStyle(
-                                color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                             const SizedBox(height: 2),
                             Text(
                               _isConnected ? '커플 연결됨 💕' : '아직 연결 안 됨',
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.85), fontSize: 12,
+                              style: const TextStyle(
+                                color: AppColors.textSecondary, fontSize: 12,
                               ),
                             ),
                           ],
@@ -243,7 +336,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   if (_loadingCouple)
                     const _LoadingCard()
                   else if (_isConnected)
-                    _ConnectedCard(partnerNickname: _partnerNickname ?? '연인')
+                    _ConnectedCard(
+                      partnerNickname: _partnerNickname ?? '연인',
+                      onDisconnect: _disconnectCouple,
+                    )
                   else
                     _DisconnectedCard(
                       myCode: _myCode,
@@ -253,6 +349,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
 
                   const SizedBox(height: 28),
+
+                  // 생리 주기 섹션 (여성만 표시)
+                  if (_gender == 'female') ...[
+                    _SectionLabel(label: '생리 주기'),
+                    const SizedBox(height: 10),
+                    const _CycleSection(),
+                    const SizedBox(height: 28),
+                  ],
 
                   // 계정 섹션
                   _SectionLabel(label: '계정'),
@@ -396,7 +500,8 @@ class _LoadingCard extends StatelessWidget {
 
 class _ConnectedCard extends StatelessWidget {
   final String partnerNickname;
-  const _ConnectedCard({required this.partnerNickname});
+  final VoidCallback onDisconnect;
+  const _ConnectedCard({required this.partnerNickname, required this.onDisconnect});
 
   @override
   Widget build(BuildContext context) {
@@ -407,44 +512,69 @@ class _ConnectedCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: AppColors.cardShadow,
       ),
-      child: Row(
+      child: Column(
         children: [
-          Container(
-            width: 52, height: 52,
-            decoration: BoxDecoration(
-              gradient: AppColors.gradient,
-              shape: BoxShape.circle,
-            ),
-            child: const Center(child: Text('💑', style: TextStyle(fontSize: 24))),
+          Row(
+            children: [
+              Container(
+                width: 52, height: 52,
+                decoration: BoxDecoration(
+                  gradient: AppColors.gradient,
+                  shape: BoxShape.circle,
+                ),
+                child: const Center(child: Text('💑', style: TextStyle(fontSize: 24))),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('연결된 커플',
+                        style: TextStyle(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 2),
+                    Text(
+                      partnerNickname,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.check_circle, color: AppColors.primary, size: 14),
+                    SizedBox(width: 4),
+                    Text('연결됨', style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(height: 16),
+          const Divider(height: 1, color: AppColors.divider),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: onDisconnect,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Text('연결된 커플',
-                    style: TextStyle(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.w500)),
-                const SizedBox(height: 2),
+                Icon(Icons.link_off_rounded, size: 15, color: Colors.red[300]),
+                const SizedBox(width: 6),
                 Text(
-                  partnerNickname,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.primary,
+                  '공유 끊기',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.red[300],
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.check_circle, color: AppColors.primary, size: 14),
-                SizedBox(width: 4),
-                Text('연결됨', style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w600)),
               ],
             ),
           ),
@@ -632,6 +762,504 @@ class _DisconnectedCard extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── 생리 주기 관리 섹션 ──────────────────────────────────────────────────────
+
+class _CycleSection extends StatefulWidget {
+  const _CycleSection();
+  @override
+  State<_CycleSection> createState() => _CycleSectionState();
+}
+
+class _CycleSectionState extends State<_CycleSection> {
+  List<Map<String, dynamic>> _myCycles = [];
+  List<Map<String, dynamic>> _partnerCycles = [];
+  String? _userId;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _userId = prefs.getString('user_id');
+      final res = await ApiService().get('/cycles');
+      final all = (res['data'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final sorted = [...all]
+        ..sort((a, b) => (b['start_date'] as String).compareTo(a['start_date'] as String));
+      setState(() {
+        _myCycles = sorted.where((c) => c['user_id'] == _userId).toList();
+        _partnerCycles = sorted.where((c) => c['user_id'] != _userId).toList();
+        _loading = false;
+      });
+    } catch (_) {
+      setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _delete(String id) async {
+    try {
+      await ApiService().delete('/cycles/$id');
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('삭제 실패: $e'), behavior: SnackBarBehavior.floating),
+        );
+      }
+    }
+  }
+
+  void _showAdd() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AddCycleSheet(onSaved: _load),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: AppColors.cardShadow,
+        ),
+        padding: const EdgeInsets.all(24),
+        child: const Center(
+          child: CircularProgressIndicator(color: AppColors.periodRed, strokeWidth: 2),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── 내 생리 주기 ──
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: AppColors.cardShadow,
+          ),
+          child: Column(
+            children: [
+              if (_myCycles.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                  child: Column(
+                    children: [
+                      const Text('🌸', style: TextStyle(fontSize: 32)),
+                      const SizedBox(height: 8),
+                      const Text('등록된 생리 주기가 없어요',
+                          style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                      const SizedBox(height: 16),
+                      SizedBox(width: double.infinity, child: _CycleAddButton(onTap: _showAdd)),
+                    ],
+                  ),
+                )
+              else ...[
+                ...(_myCycles.take(5).toList().asMap().entries.map((entry) {
+                  final i = entry.key;
+                  final c = entry.value;
+                  return _CycleTile(
+                    cycle: c,
+                    showDivider: i < (_myCycles.take(5).length - 1),
+                    onDelete: () => _delete(c['id']),
+                  );
+                })),
+                const Divider(height: 1, color: AppColors.divider),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: _CycleAddButton(onTap: _showAdd),
+                ),
+              ],
+            ],
+          ),
+        ),
+
+        // ── 파트너 생리 주기 (연결됐고 데이터 있을 때만) ──
+        if (_partnerCycles.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.only(left: 2, bottom: 8),
+            child: Row(
+              children: [
+                const Text('🌸', style: TextStyle(fontSize: 13)),
+                const SizedBox(width: 6),
+                Text(
+                  '파트너 생리 주기',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.periodRed.withValues(alpha: 0.8),
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.periodRed.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: AppColors.periodRed.withValues(alpha: 0.15),
+                width: 1,
+              ),
+            ),
+            child: Column(
+              children: _partnerCycles.take(5).toList().asMap().entries.map((entry) {
+                final i = entry.key;
+                final c = entry.value;
+                return _CycleTile(
+                  cycle: c,
+                  showDivider: i < (_partnerCycles.take(5).length - 1),
+                  onDelete: null, // 파트너 주기는 삭제 불가
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _CycleTile extends StatelessWidget {
+  final Map<String, dynamic> cycle;
+  final bool showDivider;
+  final VoidCallback? onDelete; // null이면 파트너 주기 (삭제 불가)
+  const _CycleTile({required this.cycle, required this.showDivider, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    final start = DateTime.tryParse(cycle['start_date'] ?? '');
+    final end = DateTime.tryParse(cycle['end_date'] ?? '');
+    if (start == null) return const SizedBox.shrink();
+
+    final startStr = DateFormat('yyyy.MM.dd').format(start);
+    final endStr = end != null ? ' ~ ${DateFormat('MM.dd').format(end)}' : '';
+    final days = end != null
+        ? end.difference(start).inDays + 1
+        : (cycle['period_length'] as int? ?? 5);
+    final isPartner = onDelete == null;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE57373).withAlpha(25),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Center(child: Text('🌸', style: TextStyle(fontSize: 18))),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$startStr$endStr',
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$days일간 · 주기 ${cycle['cycle_length'] ?? 28}일',
+                      style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+              if (isPartner)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.periodRed.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '파트너',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.periodRed.withValues(alpha: 0.8),
+                    ),
+                  ),
+                )
+              else
+                IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFEF9A9A)),
+                  onPressed: onDelete,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                ),
+            ],
+          ),
+        ),
+        if (showDivider) const Divider(height: 1, indent: 64, color: AppColors.divider),
+      ],
+    );
+  }
+}
+
+class _CycleAddButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _CycleAddButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: const Icon(Icons.add, size: 16, color: AppColors.periodRed),
+      label: const Text('주기 추가',
+          style: TextStyle(color: AppColors.periodRed, fontWeight: FontWeight.w600)),
+      style: OutlinedButton.styleFrom(
+        side: const BorderSide(color: Color(0x66E57373)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+      ),
+    );
+  }
+}
+
+// ── 생리 주기 추가 바텀시트 ──────────────────────────────────────────────────
+
+class _AddCycleSheet extends StatefulWidget {
+  final VoidCallback onSaved;
+  const _AddCycleSheet({required this.onSaved});
+  @override
+  State<_AddCycleSheet> createState() => _AddCycleSheetState();
+}
+
+class _AddCycleSheetState extends State<_AddCycleSheet> {
+  DateTime? _startDate;
+  DateTime? _endDate;
+  int _cycleLength = 28;
+  bool _saving = false;
+
+  Future<void> _pickDate({required bool isStart}) async {
+    final now = DateTime.now();
+    final initial = isStart
+        ? (_startDate ?? now)
+        : (_endDate ?? (_startDate?.add(const Duration(days: 4)) ?? now));
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(now.year - 2),
+      lastDate: now,
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx).copyWith(
+          colorScheme: const ColorScheme.light(primary: AppColors.periodRed),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked == null) return;
+    setState(() {
+      if (isStart) {
+        _startDate = picked;
+        if (_endDate != null && _endDate!.isBefore(picked)) _endDate = null;
+      } else {
+        _endDate = picked;
+      }
+    });
+  }
+
+  Future<void> _save() async {
+    if (_startDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('시작일을 선택해주세요'), behavior: SnackBarBehavior.floating),
+      );
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final periodLength = _endDate != null
+          ? _endDate!.difference(_startDate!).inDays + 1
+          : 5;
+      await ApiService().post('/cycles', {
+        'start_date': DateFormat('yyyy-MM-dd').format(_startDate!),
+        if (_endDate != null) 'end_date': DateFormat('yyyy-MM-dd').format(_endDate!),
+        'period_length': periodLength,
+        'cycle_length': _cycleLength,
+      });
+      widget.onSaved();
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('저장 실패: $e'), behavior: SnackBarBehavior.floating),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+
+    return Container(
+      margin: EdgeInsets.fromLTRB(16, 0, 16, bottomPadding + 16),
+      padding: EdgeInsets.only(
+        left: 24, right: 24, top: 20,
+        bottom: bottomInset > 0 ? bottomInset + 16 : 24,
+      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),
+      child: SingleChildScrollView(
+        child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Row(
+            children: [
+              Text('🌸', style: TextStyle(fontSize: 22)),
+              SizedBox(width: 8),
+              Text('생리 주기 추가',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // 시작일
+          _CycleDateRow(label: '시작일', required: true, date: _startDate,
+              onTap: () => _pickDate(isStart: true)),
+          const SizedBox(height: 12),
+
+          // 종료일
+          _CycleDateRow(label: '종료일', required: false, date: _endDate,
+              onTap: () => _pickDate(isStart: false)),
+          const SizedBox(height: 20),
+
+          // 주기 슬라이더
+          Row(
+            children: [
+              const Text('다음 생리까지',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textPrimary)),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0x1AE57373),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text('$_cycleLength일',
+                    style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.periodRed, fontSize: 14)),
+              ),
+            ],
+          ),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: AppColors.periodRed,
+              thumbColor: AppColors.periodRed,
+              inactiveTrackColor: const Color(0x26E57373),
+              overlayColor: const Color(0x1AE57373),
+              trackHeight: 3,
+            ),
+            child: Slider(
+              value: _cycleLength.toDouble(),
+              min: 21, max: 40, divisions: 19,
+              onChanged: (v) => setState(() => _cycleLength = v.round()),
+            ),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('21일', style: TextStyle(fontSize: 11, color: Colors.grey[400])),
+              Text('40일', style: TextStyle(fontSize: 11, color: Colors.grey[400])),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          SizedBox(
+            width: double.infinity, height: 52,
+            child: ElevatedButton(
+              onPressed: _saving ? null : _save,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.periodRed,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: _saving
+                  ? const SizedBox(width: 20, height: 20,
+                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : const Text('저장',
+                      style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ],
+        ), // Column
+      ), // SingleChildScrollView
+    );
+  }
+}
+
+class _CycleDateRow extends StatelessWidget {
+  final String label;
+  final bool required;
+  final DateTime? date;
+  final VoidCallback onTap;
+  const _CycleDateRow({required this.label, required this.required, required this.date, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: date != null ? const Color(0x66E57373) : AppColors.divider),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.calendar_today_rounded, size: 16,
+                color: date != null ? AppColors.periodRed : AppColors.textSecondary),
+            const SizedBox(width: 10),
+            Text(label,
+                style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500)),
+            if (required) const Text(' *', style: TextStyle(color: AppColors.periodRed, fontSize: 13)),
+            const Spacer(),
+            Text(
+              date != null ? DateFormat('yyyy년 M월 d일').format(date!) : '선택',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: date != null ? FontWeight.w600 : FontWeight.w400,
+                color: date != null ? AppColors.textPrimary : AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.chevron_right, size: 16, color: AppColors.textSecondary),
+          ],
+        ),
       ),
     );
   }
